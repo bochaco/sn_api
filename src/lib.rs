@@ -20,7 +20,9 @@ use crate::api::helpers::{
     xorname_to_xorurl, xorurl_to_xorname, KeyPair,
 };
 
-pub use crate::api::safe::Safe;
+// pub use crate::api::safe::Safe;
+pub use crate::api::safe::{Safe, BlsKeyPair, XorUrl};
+use crate::api::safe::{WalletSpendableBalance};
 
 use log::{debug, info};
 use reqwest::get as httpget;
@@ -43,141 +45,9 @@ static WALLET_TYPE_TAG: u64 = 10_000;
 static WALLET_DEFAULT: &str = "_default";
 static WALLET_DEFAULT_BYTES: &[u8] = b"_default";
 
-// The XOR-URL type (in the future in can be a struct with different functions)
-pub type XorUrl = String;
 
-// We expose a BLS key pair as two hex encoded strings
-// TODO: consider supporting other encodings like base32 or just expose Vec<u8>
-#[derive(Clone)]
-pub struct BlsKeyPair {
-    pub pk: String,
-    pub sk: String,
-}
-
-// Struct which is serialised and stored in Wallet MD for linking to a spendable balance (Key)
-#[derive(Serialize, Deserialize, Debug)]
-struct WalletSpendableBalance {
-    xorurl: XorUrl,
-    sk: String,
-}
-
-// impl Authentication for Safe {}
-// impl connect for Safe {}
-// impl auth_app for Safe {}
 
 impl Safe {
-    pub fn new(xorurl_base: String) -> Self {
-        Self {
-            safe_app: SafeApp::new(),
-            xorurl_base,
-        }
-    }
-
-    // Generate a key pair without creating and/or storing a Key on the network
-    pub fn keypair(&self) -> Result<BlsKeyPair, String> {
-        let key_pair = KeyPair::random();
-        let (pk, sk) = key_pair.to_hex_key_pair();
-        Ok(BlsKeyPair { pk, sk })
-    }
-
-    // Create a Key on the network and return its XOR-URL
-    pub fn keys_create(
-        &mut self,
-        from: BlsKeyPair,
-        preload_amount: Option<String>,
-        pk: Option<String>,
-    ) -> Result<(XorUrl, Option<BlsKeyPair>), String> {
-        let from_key_pair = KeyPair::from_hex_keys(&from.pk, &from.sk)?;
-        let _ = parse_coins_amount(&preload_amount.clone().unwrap_or_else(|| "0".to_string()))?;
-
-        let mut create_coin_balance = |to_pk, amount: &str| match self.safe_app.create_balance(
-            &from_key_pair.pk,
-            &from_key_pair.sk,
-            &to_pk,
-            amount,
-        ) {
-            Err("InvalidAmount") => Err(format!(
-                "The amount '{}' specified for the transfer is invalid",
-                amount
-            )),
-            Err("NotEnoughBalance") => {
-                Err("Not enough balance at 'source' for the operation".to_string())
-            }
-            Err(other_error) => Err(format!(
-                "Unexpected error when attempting to create Key: {}",
-                other_error
-            )),
-            Ok(xorname) => Ok(xorname),
-        };
-
-        let amount = preload_amount.unwrap_or_else(|| "0.0".to_string());
-
-        let (xorname, key_pair) = match pk {
-            Some(pk_str) => {
-                let pk = unwrap!(pk_from_hex(&pk_str));
-                let xorname = create_coin_balance(pk, &amount)?;
-                (xorname, None)
-            }
-            None => {
-                let key_pair = KeyPair::random();
-                let (pk, sk) = key_pair.to_hex_key_pair();
-                let xorname = create_coin_balance(key_pair.pk, &amount)?;
-                (xorname, Some(BlsKeyPair { pk, sk }))
-            }
-        };
-
-        let xorurl = xorname_to_xorurl(&xorname, &self.xorurl_base)?;
-        Ok((xorurl, key_pair))
-    }
-
-    // Create a Key on the network, allocates testcoins onto it, and return the Key's XOR-URL
-    // This is avilable only when testing with mock-network
-    // #[cfg(feature = "mock-network")]
-    pub fn keys_create_preload_test_coins(
-        &mut self,
-        preload_amount: String,
-        pk: Option<String>,
-    ) -> Result<(XorUrl, Option<BlsKeyPair>), String> {
-        let _ = parse_coins_amount(&preload_amount)?;
-        let (xorname, key_pair) = match pk {
-            Some(pk_str) => {
-                let pk = unwrap!(pk_from_hex(&pk_str));
-                let xorname = self.safe_app.allocate_test_coins(&pk, &preload_amount);
-                (xorname, None)
-            }
-            None => {
-                let key_pair = KeyPair::random();
-                let xorname = self
-                    .safe_app
-                    .allocate_test_coins(&key_pair.pk, &preload_amount);
-                let (pk, sk) = key_pair.to_hex_key_pair();
-                (xorname, Some(BlsKeyPair { pk, sk }))
-            }
-        };
-
-        let xorurl = xorname_to_xorurl(&xorname, &self.xorurl_base)?;
-        Ok((xorurl, key_pair))
-    }
-
-    // Check Key's balance from the network from a given PublicKey
-    pub fn keys_balance_from_pk(&self, key_pair: &BlsKeyPair) -> Result<String, String> {
-        let pair = KeyPair::from_hex_keys(&key_pair.pk, &key_pair.sk)?;
-        self.safe_app
-            .get_balance_from_pk(&pair.pk, &pair.sk)
-            .map_err(|_| "No Key found at specified location".to_string())
-    }
-
-    // Check Key's balance from the network from a given XOR-URL
-    pub fn keys_balance_from_xorurl(&self, xorurl: &str, sk: &str) -> Result<String, String> {
-        let secret_key: SecretKey =
-            sk_from_hex(sk).map_err(|_| "Invalid secret key provided".to_string())?;
-        let xorname = xorurl_to_xorname(xorurl)?;
-
-        Ok(self
-            .safe_app
-            .get_balance_from_xorname(&xorname, &secret_key)
-            .map_err(|_| "No Key found at specified location".to_string())?)
-    }
 
     // Fetch Key's pk from the network from a given XOR-URL
     pub fn fetch_pk_from_xorname(&self, xorurl: &str) -> Result<String, String> {
