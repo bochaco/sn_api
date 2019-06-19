@@ -6,21 +6,14 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-mod api;
-mod cli;
-mod subcommands;
+#[cfg(not(feature = "scl-mock"))]
+use crate::api::safe_client_libs::SafeApp;
+use log::{debug, info};
 
-use cli::run;
-use env_logger;
-use log::{debug, error};
-use std::process;
+#[cfg(feature = "scl-mock")]
+use crate::api::scl_mock::SafeApp;
 
-fn main() {
-    env_logger::init();
-    debug!("Starting SAFE CLI...");
-
-    if let Err(e) = run() {
-        error!("safe_cli error: {}", e);
-        process::exit(1);
-    }
+pub struct Safe {
+    pub safe_app: SafeApp,
+    pub xorurl_base: String,
 }

@@ -6,17 +6,22 @@
 // KIND, either express or implied. Please review the Licences for the specific language governing
 // permissions and limitations relating to use of the SAFE Network Software.
 
-mod lib_helpers;
-#[cfg(not(feature = "scl-mock"))]
-mod safe_client_libs;
-//#[cfg(feature = "scl-mock")]
-mod scl_mock;
+mod api;
 
-pub use lib_helpers::vec_to_hex;
-use lib_helpers::{
+// mod lib_helpers;
+#[cfg(not(feature = "scl-mock"))]
+use api::safe_client_libs;
+//#[cfg(feature = "scl-mock")]
+use api::scl_mock;
+
+pub use crate::api::helpers::vec_to_hex;
+use crate::api::helpers::{
     decode_ipc_msg, encode_ipc_msg, parse_coins_amount, pk_from_hex, pk_to_hex, sk_from_hex,
     xorname_to_xorurl, xorurl_to_xorname, KeyPair,
 };
+
+pub use crate::api::safe::Safe;
+
 use log::{debug, info};
 use reqwest::get as httpget;
 #[cfg(not(feature = "scl-mock"))]
@@ -38,9 +43,6 @@ static WALLET_TYPE_TAG: u64 = 10_000;
 static WALLET_DEFAULT: &str = "_default";
 static WALLET_DEFAULT_BYTES: &[u8] = b"_default";
 
-// Default URL where to send a GET request to the authenticator webservice for authorising a SAFE app
-const SAFE_AUTH_WEBSERVICE_BASE_URL: &str = "http://localhost:41805/authorise/";
-
 // The XOR-URL type (in the future in can be a struct with different functions)
 pub type XorUrl = String;
 
@@ -59,10 +61,9 @@ struct WalletSpendableBalance {
     sk: String,
 }
 
-pub struct Safe {
-    safe_app: SafeApp,
-    xorurl_base: String,
-}
+// impl Authentication for Safe {}
+// impl connect for Safe {}
+// impl auth_app for Safe {}
 
 impl Safe {
     pub fn new(xorurl_base: String) -> Self {
@@ -70,75 +71,6 @@ impl Safe {
             safe_app: SafeApp::new(),
             xorurl_base,
         }
-    }
-
-    // Generate an authorisation request string and send it to a SAFE Authenticator.
-    // Ir returns the credentials necessary to connect to the network, encoded in a single string.
-    pub fn auth_app(
-        &mut self,
-        app_id: &str,
-        app_name: &str,
-        app_vendor: &str,
-    ) -> Result<String, String> {
-        info!("Sending authorisation request to SAFE Authenticator...");
-
-        let ipc_req = IpcReq::Auth(AuthReq {
-            app: AppExchangeInfo {
-                id: app_id.to_string(),
-                scope: None,
-                name: app_name.to_string(),
-                vendor: app_vendor.to_string(),
-            },
-            app_container: false,
-            app_permissions: AppPermissions {
-                transfer_coins: true,
-            },
-            // TODO: allow list of required containers permissions to be passed in as param
-            containers: HashMap::new(),
-        });
-
-        match encode_ipc_msg(ipc_req) {
-            Ok(auth_req_str) => {
-                debug!(
-                    "Authorisation request generated successfully: {}",
-                    auth_req_str
-                );
-
-                let authenticator_webservice_url =
-                    SAFE_AUTH_WEBSERVICE_BASE_URL.to_string() + &auth_req_str;
-                let mut res = httpget(&authenticator_webservice_url)
-                    .map_err(|err| format!("Failed to send request to Authenticator: {}", err))?;
-                let mut auth_res = String::new();
-                res.read_to_string(&mut auth_res).map_err(|err| {
-                    format!(
-                        "Failed read authorisation response received from Authenticator: {}",
-                        err
-                    )
-                })?;
-                info!("SAFE authorisation response received!");
-
-                // Check if the app has been authorised
-                match decode_ipc_msg(&auth_res) {
-                    Ok(_) => {
-                        info!("Application was authorisaed");
-                        Ok(auth_res)
-                    }
-                    Err(e) => {
-                        info!("Application was not authorised");
-                        Err(e)
-                    }
-                }
-            }
-            Err(e) => Err(format!(
-                "Failed encoding the authorisation request: {:?}",
-                e
-            )),
-        }
-    }
-
-    // Connect to the SAFE Network using the provided app id and auth credentials
-    pub fn connect(&mut self, app_id: &str, auth_credentials: &str) -> Result<(), String> {
-        self.safe_app.connect(app_id, auth_credentials)
     }
 
     // Generate a key pair without creating and/or storing a Key on the network
