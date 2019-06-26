@@ -13,11 +13,13 @@ use super::xorurl::{xorname_to_xorurl, xorurl_to_xorname, XorUrl};
 use super::{BlsKeyPair, Safe};
 use chrono::{DateTime, Utc};
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::Path;
 use threshold_crypto::SecretKey;
 use unwrap::unwrap;
 
 // To use for mapping path to xorurl
-pub type ContentMap = BTreeMap<String, XorUrl>;
+pub type FilesMap = BTreeMap<String, String>;
 
 pub type FilesContainer = String; //json serialised
 pub type FilesMap = Vec<(DateTime<Utc>, FilesContainer)>;
@@ -27,7 +29,7 @@ impl Safe {
     ///
     /// ## Example
     ///
-    /// ```rust,ignore
+    /// ```rust
     /// # use safe_cli::Safe;
     /// # use unwrap::unwrap;
     /// # let mut safe = Safe::new("base32".to_string());
@@ -41,12 +43,41 @@ impl Safe {
     /// let fileMap = create_files_map( content_map ).unwrap();
     /// assert_eq!("what", fileMap);
     /// ```
-    pub fn create_files_map(&mut self, content: ContentMap) -> Result<(), String> {
+    pub fn create_files_map(&mut self, content: ContentMap) -> Result<String, String> {
         // TODO: take content map
         // iterate over. Put into timestamp for order...
         // PUT that onto the network.
         //
-        Ok(())
+        let data = Vec::new();
+
+        // let mut file_map : FilesMap =
+        let now = &Utc::now().to_string();
+
+        for (key, value) in content.iter() {
+            println!("fielmakingggg:::::   {}: {}", key, value);
+            // TODO: construct metadata mapping
+            let mut file: BTreeMap<&str, &str> = BTreeMap::new();
+            let metadata = unwrap!(fs::metadata(&key));
+
+            file.insert(
+                "type",
+                Path::new(&key).extension().unwrap().to_str().unwrap(),
+            );
+            file.insert("length", &metadata.len().to_string());
+            // file.insert("permissions", metadata.permissions().to_string());
+            file.insert("modified", now);
+            file.insert("created", now);
+
+            &data.push((now.into_bytes().to_vec(), file));
+        }
+
+        //create this data!.
+
+        let xorname = self
+            .safe_app
+            .put_seq_appendable_data(data, None, FILES_MAP_TYPE_TAG, None);
+
+        xorname_to_xorurl(&xorname.unwrap(), &self.xorurl_base)
     }
 
     // TODO:
