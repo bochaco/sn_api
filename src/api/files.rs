@@ -9,18 +9,21 @@
 // use super::helpers::{parse_coins_amount, pk_from_hex, pk_to_hex, sk_from_hex, KeyPair};
 use super::xorurl::{xorname_to_xorurl, xorurl_to_xorname, XorUrl};
 // use super::scl_mock::{xorname_to_xorurl, xorurl_to_xorname, XorUrl};
-use serde::{Deserialize, Serialize};
-
 use super::{BlsKeyPair, Safe};
 use chrono::{DateTime, Utc};
+use log::debug;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 use threshold_crypto::SecretKey;
 use unwrap::unwrap;
 
-// To use for mapping path to xorurl
-pub type FilesMap = BTreeMap<String, String>;
+// Each FileItem contains file metadata and the link to the file's ImmutableData XOR-URL
+pub type FileItem = BTreeMap<String, String>;
+
+// To use for mapping files names (with path in a flattened hierarchy) to FileItems
+pub type FilesMap = BTreeMap<String, FileItem>;
 
 //TODO : decide on a non random tyep tag...
 static FILES_MAP_TYPE_TAG: u64 = 21332;
@@ -32,6 +35,7 @@ static FILES_MAP_TYPE_TAG: u64 = 21332;
 // }
 // ...filesmap metadata?
 // }
+
 pub type ContentMap = BTreeMap<String, XorUrl>;
 // pub type VersionedData = BTreeMap<DateTime<Utc>, BTreeMap<String, String>>;
 
@@ -43,15 +47,15 @@ impl Safe {
     /// ```rust
     /// # use safe_cli::Safe;
     /// # use unwrap::unwrap;
-	/// # use std::collections::BTreeMap;
+    /// # use std::collections::BTreeMap;
     /// # let mut safe = Safe::new("base32".to_string());
     /// let top = b"Something top level";
     /// let top_xorurl = safe.put_published_immutable(top).unwrap();
     /// let second = b"Something second level";
     /// let second_xorurl = safe.put_published_immutable(second).unwrap();
     /// let mut content_map = BTreeMap::new();
-    /// content_map.insert("./folder/file.txt".to_string(), top_xorurl);
-    /// content_map.insert("./folder/subfolder/anotherfile.txt".to_string(), second_xorurl);
+    /// content_map.insert("./tests/testfolder/test.md".to_string(), top_xorurl);
+    /// content_map.insert("./tests/testfolder/subfolder/subexists.md".to_string(), second_xorurl);
     /// let file_map_xorurl = safe.create_files_map( content_map ).unwrap();
     /// assert_eq!("what", file_map_xorurl);
     /// ```
@@ -60,40 +64,52 @@ impl Safe {
         // iterate over. Put into timestamp for order...
         // PUT that onto the network.
         //
-        let mut data = Vec::new();
+        let mut files_map = FilesMap::default();
 
         // let mut file_map : FilesMap =
-        let now = &Utc::now().to_string();
+        let now = Utc::now().to_string().to_string();
 
         for (key, value) in content.iter() {
-            println!("fielmakingggg:::::   {}: {}", key, value);
-            // TODO: construct metadata mapping
-            let mut file: BTreeMap<&str, &str> = BTreeMap::new();
-            let metadata = unwrap!(fs::metadata(&key));
+            let mut file = FileItem::new();
+            let metadata = fs::metadata(&key).map_err(|err| {
+                format!(
+                    "Couldn't obtain metadata information for local file: {:?}",
+                    err,
+                )
+            })?;
 
+            file.insert("link".to_string(), value.to_string());
+
+            let file_type = Path::new(&key).extension().ok_or("unknown")?;
             file.insert(
-                "type",
-                Path::new(&key).extension().unwrap().to_str().unwrap(),
+                "type".to_string(),
+                file_type.to_str().unwrap_or_else(|| "unknown").to_string(),
             );
-			let file_length =  &metadata.len().to_string();
 
-            file.insert("length", file_length);
+            let file_size = &metadata.len().to_string();
+            file.insert("size".to_string(), file_size.to_string());
+
             // file.insert("permissions", metadata.permissions().to_string());
-            file.insert("modified", now);
-            file.insert("created", now);
+            file.insert("modified".to_string(), now.clone());
+            file.insert("created".to_string(), now.clone());
 
-			let file_json = serde_json::to_string(&file);
+            debug!("FileItem item: {:?}", file);
 
-            &data.push((now.clone().into_bytes().to_vec(), unwrap!(file_json).into_bytes().to_vec()));
+            &files_map.insert(key.to_string(), file);
         }
 
         //create this data!.
-
-        let xorname = self
+        /*let xorname = self
             .safe_app
             .put_seq_appendable_data(data, None, FILES_MAP_TYPE_TAG, None);
 
-        xorname_to_xorurl(&xorname.unwrap(), &self.xorurl_base)
+        xorname_to_xorurl(&xorname.unwrap(), &self.xorurl_base)*/
+
+        // TODO: use RDF format and serialise it
+        let serialised_rdf = serde_json::to_string(&files_map)
+            .map_err(|err| format!("Couldn't serialise the FilesMap generated: {:?}", err))?;
+
+        Ok(serialised_rdf)
     }
 
     // TODO:
