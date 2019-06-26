@@ -9,6 +9,7 @@
 // use super::helpers::{parse_coins_amount, pk_from_hex, pk_to_hex, sk_from_hex, KeyPair};
 use super::xorurl::{xorname_to_xorurl, xorurl_to_xorname, XorUrl};
 // use super::scl_mock::{xorname_to_xorurl, xorurl_to_xorname, XorUrl};
+use serde::{Deserialize, Serialize};
 
 use super::{BlsKeyPair, Safe};
 use chrono::{DateTime, Utc};
@@ -42,23 +43,24 @@ impl Safe {
     /// ```rust
     /// # use safe_cli::Safe;
     /// # use unwrap::unwrap;
+	/// # use std::collections::BTreeMap;
     /// # let mut safe = Safe::new("base32".to_string());
     /// let top = b"Something top level";
     /// let top_xorurl = safe.put_published_immutable(top).unwrap();
     /// let second = b"Something second level";
     /// let second_xorurl = safe.put_published_immutable(second).unwrap();
-    /// let mut content_map: ContentMap = Default::default();
+    /// let mut content_map = BTreeMap::new();
     /// content_map.insert("./folder/file.txt".to_string(), top_xorurl);
     /// content_map.insert("./folder/subfolder/anotherfile.txt".to_string(), second_xorurl);
-    /// let fileMap = create_files_map( content_map ).unwrap();
-    /// assert_eq!("what", fileMap);
+    /// let file_map_xorurl = safe.create_files_map( content_map ).unwrap();
+    /// assert_eq!("what", file_map_xorurl);
     /// ```
     pub fn create_files_map(&mut self, content: ContentMap) -> Result<String, String> {
         // TODO: take content map
         // iterate over. Put into timestamp for order...
         // PUT that onto the network.
         //
-        let data = Vec::new();
+        let mut data = Vec::new();
 
         // let mut file_map : FilesMap =
         let now = &Utc::now().to_string();
@@ -73,12 +75,16 @@ impl Safe {
                 "type",
                 Path::new(&key).extension().unwrap().to_str().unwrap(),
             );
-            file.insert("length", &metadata.len().to_string());
+			let file_length =  &metadata.len().to_string();
+
+            file.insert("length", file_length);
             // file.insert("permissions", metadata.permissions().to_string());
             file.insert("modified", now);
             file.insert("created", now);
 
-            &data.push((now.into_bytes().to_vec(), file));
+			let file_json = serde_json::to_string(&file);
+
+            &data.push((now.clone().into_bytes().to_vec(), unwrap!(file_json).into_bytes().to_vec()));
         }
 
         //create this data!.
