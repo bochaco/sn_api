@@ -316,11 +316,6 @@ impl SafeApp {
         _permissions: Option<String>,
     ) -> Result<XorName, String> {
         let xorname = name.unwrap_or_else(|| create_random_xorname());
-        //
-        // let seq_md = match self.mock_data.published_seq_append_only.get(&xorname_to_hex(&xorname)) {
-        //     Some(uao) => uao.clone(),
-        //     None => BTreeMap::new(),
-        // };
 
         self.mock_data
             .published_seq_append_only

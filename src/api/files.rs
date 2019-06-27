@@ -42,18 +42,14 @@ impl Safe {
     /// let top_xorurl = safe.put_published_immutable(top).unwrap();
     /// let second = b"Something second level";
     /// let second_xorurl = safe.put_published_immutable(second).unwrap();
-    /// let mut content_map = BTreeMap::new();
+	/// let mut content_map = BTreeMap::new();
     /// content_map.insert("./tests/testfolder/test.md".to_string(), top_xorurl);
     /// content_map.insert("./tests/testfolder/subfolder/subexists.md".to_string(), second_xorurl);
     /// let file_map = safe.create_files_map( content_map ).unwrap();
-    /// assert_eq!(true, file_map.contains("\"md\""));
-    /// assert_eq!(true, file_map.contains("\"./tests/testfolder/test.md\""));
+    /// # assert_eq!(true, file_map.contains("\"md\""));
+    /// # assert_eq!(true, file_map.contains("\"./tests/testfolder/test.md\""));
     /// ```
     pub fn create_files_map(&mut self, content: ContentMap) -> Result<String, String> {
-        // TODO: take content map
-        // iterate over. Put into timestamp for order...
-        // PUT that onto the network.
-        //
         let mut files_map = FilesMap::default();
 
         // let mut file_map : FilesMap =
@@ -101,6 +97,43 @@ impl Safe {
 
         Ok(serialised_rdf)
     }
+
+
+	/// # Create versioned data.
+	///
+	/// ## Example
+	///
+	/// ```rust
+	/// # use safe_cli::Safe;
+	/// # use unwrap::unwrap;
+	/// # use std::collections::BTreeMap;
+	/// # let mut safe = Safe::new("base32".to_string());
+	/// let top = b"Something top level";
+	/// let top_xorurl = safe.put_published_immutable(top).unwrap();
+	/// let second = b"Something second level";
+	/// let second_xorurl = safe.put_published_immutable(second).unwrap();
+	/// let mut content_map = BTreeMap::new();
+	/// content_map.insert("./tests/testfolder/test.md".to_string(), top_xorurl);
+	/// content_map.insert("./tests/testfolder/subfolder/subexists.md".to_string(), second_xorurl);
+	/// let file_map = safe.create_files_map( content_map ).unwrap();
+	/// # assert_eq!(true, file_map.contains("\"md\""));
+	/// # assert_eq!(true, file_map.contains("\"./tests/testfolder/test.md\""));
+	/// ```
+	pub fn put_versioned_data(&mut self, data: Vec<u8>, type_tag: u64 ) -> Result<XorUrl, String> {
+
+
+		// let mut file_map : FilesMap =
+		let now = Utc::now().to_string().to_string();
+
+		let appendable_data = vec!( (now.into_bytes().to_vec(), data ));
+
+		//create this data!.
+		let xorname = self
+			.safe_app
+			.put_seq_appendable_data(appendable_data, None, type_tag, None);
+
+		xorname_to_xorurl(&xorname.unwrap(), &self.xorurl_base)
+	}
 
     // TODO:
     // Upload files as ImmutableData
