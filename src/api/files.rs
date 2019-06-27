@@ -45,8 +45,9 @@ impl Safe {
     /// let mut content_map = BTreeMap::new();
     /// content_map.insert("./tests/testfolder/test.md".to_string(), top_xorurl);
     /// content_map.insert("./tests/testfolder/subfolder/subexists.md".to_string(), second_xorurl);
-    /// let file_map_xorurl = safe.create_files_map( content_map ).unwrap();
-    /// assert_eq!("what", file_map_xorurl);
+    /// let file_map = safe.create_files_map( content_map ).unwrap();
+    /// assert_eq!(true, file_map.contains("\"md\""));
+    /// assert_eq!(true, file_map.contains("\"./tests/testfolder/test.md\""));
     /// ```
     pub fn create_files_map(&mut self, content: ContentMap) -> Result<String, String> {
         // TODO: take content map
