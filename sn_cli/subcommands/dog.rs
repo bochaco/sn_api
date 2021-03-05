@@ -101,6 +101,23 @@ pub async fn dog_commander(cmd: DogCommands, output_fmt: OutputFmt, safe: &mut S
                         media_type.clone().unwrap_or_else(|| "Unknown".to_string())
                     );
                 }
+                SafeData::PrivateBlob {
+                    xorurl,
+                    xorname,
+                    media_type,
+                    resolved_from,
+                    ..
+                } => {
+                    println!("Resolved from: {}", resolved_from);
+                    println!("= File =");
+                    println!("XOR-URL: {}", xorurl);
+                    println!("XOR name: 0x{}", xorname_to_hex(xorname));
+                    println!("Native data type: PrivateBlob");
+                    println!(
+                        "Media type: {}",
+                        media_type.clone().unwrap_or_else(|| "Unknown".to_string())
+                    );
+                }
                 SafeData::Wallet {
                     xorurl,
                     xorname,

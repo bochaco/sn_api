@@ -1190,12 +1190,17 @@ impl SafeUrl {
         xor_name: XorName,
         content_type: SafeContentType,
         base: XorUrlBase,
+        is_private: bool,
     ) -> Result<String> {
         SafeUrl::encode(
             xor_name,
             None,
             0,
-            SafeDataType::PublicBlob,
+            if is_private {
+                SafeDataType::PrivateBlob
+            } else {
+                SafeDataType::PublicBlob
+            },
             content_type,
             None,
             None,
@@ -1207,7 +1212,7 @@ impl SafeUrl {
     }
 
     // A non-member Map encoder function for convenience
-    pub fn encode_mutable_data(
+    pub fn encode_map_data(
         xor_name: XorName,
         type_tag: u64,
         content_type: SafeContentType,
@@ -1549,7 +1554,8 @@ mod tests {
     #[test]
     fn test_safeurl_base32z_encoding() -> Result<()> {
         let xor_name = XorName(*b"12345678901234567890123456789012");
-        let xorurl = SafeUrl::encode_blob(xor_name, SafeContentType::Raw, XorUrlBase::Base32z)?;
+        let xorurl =
+            SafeUrl::encode_blob(xor_name, SafeContentType::Raw, XorUrlBase::Base32z, false)?;
         let base32z_xorurl = "safe://hbyyyyncj1gc4dkptz8yhuycj1gc4dkptz8yhuycj1gc4dkptz8yhuycj1";
         assert_eq!(xorurl, base32z_xorurl);
         Ok(())
@@ -1585,7 +1591,8 @@ mod tests {
     fn test_safeurl_default_base_encoding() -> Result<()> {
         let xor_name = XorName(*b"12345678901234567890123456789012");
         let base32z_xorurl = "safe://hbyyyyncj1gc4dkptz8yhuycj1gc4dkptz8yhuycj1gc4dkptz8yhuycj1";
-        let xorurl = SafeUrl::encode_blob(xor_name, SafeContentType::Raw, DEFAULT_XORURL_BASE)?;
+        let xorurl =
+            SafeUrl::encode_blob(xor_name, SafeContentType::Raw, DEFAULT_XORURL_BASE, false)?;
         assert_eq!(xorurl, base32z_xorurl);
         Ok(())
     }
@@ -1705,6 +1712,7 @@ mod tests {
             xor_name,
             SafeContentType::MediaType("text/html".to_string()),
             XorUrlBase::Base32z,
+            false,
         )?;
 
         let xorurl_encoder = SafeUrl::from_url(&xorurl)?;
@@ -1742,6 +1750,7 @@ mod tests {
             xor_name,
             SafeContentType::MediaType("text/html".to_string()),
             XorUrlBase::Base32z,
+            false,
         )?;
 
         let len = xorurl.len() - 1;

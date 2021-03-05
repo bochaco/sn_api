@@ -58,6 +58,14 @@ pub enum SafeData {
         metadata: Option<FileItem>,
         resolved_from: String,
     },
+    PrivateBlob {
+        xorurl: String,
+        xorname: XorName,
+        data: Vec<u8>,
+        media_type: Option<String>,
+        metadata: Option<FileItem>,
+        resolved_from: String,
+    },
     NrsMapContainer {
         public_name: Option<String>,
         xorurl: String,
@@ -94,6 +102,7 @@ impl SafeData {
             | Wallet { xorurl, .. }
             | FilesContainer { xorurl, .. }
             | PublicBlob { xorurl, .. }
+            | PrivateBlob { xorurl, .. }
             | NrsMapContainer { xorurl, .. }
             | PublicSequence { xorurl, .. }
             | PrivateSequence { xorurl, .. } => xorurl.clone(),
@@ -107,6 +116,7 @@ impl SafeData {
             | Wallet { resolved_from, .. }
             | FilesContainer { resolved_from, .. }
             | PublicBlob { resolved_from, .. }
+            | PrivateBlob { resolved_from, .. }
             | NrsMapContainer { resolved_from, .. }
             | PrivateSequence { resolved_from, .. }
             | PublicSequence { resolved_from, .. } => resolved_from.clone(),
@@ -411,7 +421,11 @@ impl Safe {
                         Ok((safe_data, None))
                     }
                     SafeDataType::PublicBlob => {
-                        self.retrieve_blob(&the_xor, retrieve_data, None, &metadata, range)
+                        self.retrieve_pub_blob(&the_xor, retrieve_data, None, &metadata, range)
+                            .await
+                    }
+                    SafeDataType::PrivateBlob => {
+                        self.retrieve_priv_blob(&the_xor, retrieve_data, None, &metadata, range)
                             .await
                     }
                     SafeDataType::PublicSequence => {
@@ -464,7 +478,17 @@ impl Safe {
 
                 match the_xor.data_type() {
                     SafeDataType::PublicBlob => {
-                        self.retrieve_blob(
+                        self.retrieve_pub_blob(
+                            &the_xor,
+                            retrieve_data,
+                            Some(media_type_str),
+                            &metadata,
+                            range,
+                        )
+                        .await
+                    }
+                    SafeDataType::PrivateBlob => {
+                        self.retrieve_priv_blob(
                             &the_xor,
                             retrieve_data,
                             Some(media_type_str),
@@ -511,7 +535,7 @@ impl Safe {
         }
     }
 
-    async fn retrieve_blob(
+    async fn retrieve_pub_blob(
         &mut self,
         the_xor: &XorUrlEncoder,
         retrieve_data: bool,
@@ -519,20 +543,9 @@ impl Safe {
         metadata: &Option<FileItem>,
         range: Range,
     ) -> Result<(SafeData, Option<NextStepInfo>)> {
-        if !the_xor.path().is_empty() {
-            return Err(Error::ContentError(format!(
-                "Cannot get relative path of Immutable Data {:?}",
-                the_xor.path_decoded()?
-            )));
-        };
-
-        let data = if retrieve_data {
-            self.safe_client
-                .get_public_blob(the_xor.xorname(), range)
-                .await?
-        } else {
-            vec![]
-        };
+        let data = self
+            .get_blob_content(the_xor, retrieve_data, range, false)
+            .await?;
 
         let safe_data = SafeData::PublicBlob {
             xorurl: the_xor.to_xorurl_string(),
@@ -544,6 +557,53 @@ impl Safe {
         };
 
         Ok((safe_data, None))
+    }
+
+    async fn retrieve_priv_blob(
+        &mut self,
+        the_xor: &XorUrlEncoder,
+        retrieve_data: bool,
+        media_type: Option<String>,
+        metadata: &Option<FileItem>,
+        range: Range,
+    ) -> Result<(SafeData, Option<NextStepInfo>)> {
+        let data = self
+            .get_blob_content(the_xor, retrieve_data, range, true)
+            .await?;
+
+        let safe_data = SafeData::PrivateBlob {
+            xorurl: the_xor.to_xorurl_string(),
+            xorname: the_xor.xorname(),
+            data,
+            media_type,
+            metadata: metadata.clone(),
+            resolved_from: the_xor.to_string(),
+        };
+
+        Ok((safe_data, None))
+    }
+
+    async fn get_blob_content(
+        &mut self,
+        the_xor: &XorUrlEncoder,
+        retrieve_data: bool,
+        range: Range,
+        is_private: bool,
+    ) -> Result<Vec<u8>> {
+        if !the_xor.path().is_empty() {
+            return Err(Error::ContentError(format!(
+                "Cannot get relative path of Immutable Data {:?}",
+                the_xor.path_decoded()?
+            )));
+        };
+
+        if retrieve_data {
+            self.safe_client
+                .get_blob(the_xor.xorname(), range, is_private)
+                .await
+        } else {
+            Ok(vec![])
+        }
     }
 }
 
@@ -903,6 +963,44 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_fetch_private_blob() -> Result<()> {
+        let mut safe = new_safe_instance().await?;
+        let data = b"Something super immutable";
+        let xorurl = safe
+            .files_store_private_blob(data, Some("text/plain"), false)
+            .await?;
+
+        let xorurl_encoder = XorUrlEncoder::from_url(&xorurl)?;
+        let content = retry_loop!(safe.fetch(&xorurl, None));
+        assert!(
+            content
+                == SafeData::PrivateBlob {
+                    xorurl: xorurl.clone(),
+                    xorname: xorurl_encoder.xorname(),
+                    data: data.to_vec(),
+                    resolved_from: xorurl.clone(),
+                    media_type: Some("text/plain".to_string()),
+                    metadata: None,
+                }
+        );
+
+        // let's also compare it with the result from inspecting the URL
+        let inspected_content = safe.inspect(&xorurl).await?;
+        assert!(
+            inspected_content[0]
+                == SafeData::PrivateBlob {
+                    xorurl: xorurl.clone(),
+                    xorname: xorurl_encoder.xorname(),
+                    data: vec![],
+                    resolved_from: xorurl,
+                    media_type: Some("text/plain".to_string()),
+                    metadata: None,
+                }
+        );
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_fetch_public_sequence() -> Result<()> {
         let mut safe = new_safe_instance().await?;
         let data = b"Something super immutable";
@@ -942,18 +1040,11 @@ mod tests {
     async fn test_fetch_unsupported() -> Result<()> {
         let mut safe = new_safe_instance().await?;
         let xorname = rand::random();
-        let type_tag = 575_756_443;
-        let xorurl = XorUrlEncoder::encode(
+        let type_tag = 575_756_442;
+        let xorurl = XorUrlEncoder::encode_map_data(
             xorname,
-            None,
             type_tag,
-            SafeDataType::PrivateBlob,
             SafeContentType::Raw,
-            None,
-            None,
-            None,
-            None,
-            None,
             XorUrlBase::Base32z,
         )?;
 
@@ -962,7 +1053,7 @@ mod tests {
                 bail!("Unxpected fetched content: {:?}", c)
             }
             Err(Error::ContentError(msg)) => {
-                assert_eq!(msg, "Data type 'PrivateBlob' not supported yet".to_string())
+                assert_eq!(msg, "Data type 'SeqMap' not supported yet".to_string())
             }
             other => bail!("Error returned is not the expected one: {:?}", other),
         };
@@ -970,7 +1061,7 @@ mod tests {
         match safe.inspect(&xorurl).await {
             Ok(c) => Err(anyhow!("Unxpected fetched content: {:?}", c)),
             Err(Error::ContentError(msg)) => {
-                assert_eq!(msg, "Data type 'PrivateBlob' not supported yet".to_string());
+                assert_eq!(msg, "Data type 'SeqMap' not supported yet".to_string());
                 Ok(())
             }
             other => Err(anyhow!(
@@ -985,17 +1076,10 @@ mod tests {
         let mut safe = new_safe_instance().await?;
         let xorname = rand::random();
         let type_tag = 575_756_443;
-        let xorurl = XorUrlEncoder::encode(
+        let xorurl = XorUrlEncoder::encode_map_data(
             xorname,
-            None,
             type_tag,
-            SafeDataType::PrivateBlob,
             SafeContentType::MediaType("text/html".to_string()),
-            None,
-            None,
-            None,
-            None,
-            None,
             XorUrlBase::Base32z,
         )?;
 
@@ -1004,7 +1088,7 @@ mod tests {
                 bail!("Unxpected fetched content: {:?}", c)
             }
             Err(Error::ContentError(msg)) => {
-                assert_eq!(msg, "Data type 'PrivateBlob' not supported yet".to_string())
+                assert_eq!(msg, "Data type 'SeqMap' not supported yet".to_string())
             }
             other => bail!("Error returned is not the expected one: {:?}", other),
         };
@@ -1012,7 +1096,7 @@ mod tests {
         match safe.inspect(&xorurl).await {
             Ok(c) => Err(anyhow!("Unxpected fetched content: {:?}", c)),
             Err(Error::ContentError(msg)) => {
-                assert_eq!(msg, "Data type 'PrivateBlob' not supported yet".to_string());
+                assert_eq!(msg, "Data type 'SeqMap' not supported yet".to_string());
                 Ok(())
             }
             other => Err(anyhow!(

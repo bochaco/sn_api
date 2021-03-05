@@ -61,7 +61,7 @@ pub async fn cat_commander(cmd: CatCommands, output_fmt: OutputFmt, safe: &mut S
                 println!("{}", serialise_output(&(url, files_map), output_fmt));
             }
         }
-        SafeData::PublicBlob { data, .. } => {
+        SafeData::PublicBlob { data, .. } | SafeData::PrivateBlob { data, .. } => {
             if cmd.hexdump {
                 // Render hex representation of Blob file
                 println!("{}", pretty_hex::pretty_hex(data));

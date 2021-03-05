@@ -577,10 +577,40 @@ impl Safe {
             },
         )?;
 
-        // TODO: do we want ownership from other PKs yet?
-        let xorname = self.safe_client.store_public_blob(&data, dry_run).await?;
+        let xorname = self
+            .safe_client
+            .store_blob(&data, dry_run, /*is_public =*/ false)
+            .await?;
 
-        XorUrlEncoder::encode_blob(xorname, content_type, self.xorurl_base)
+        XorUrlEncoder::encode_blob(xorname, content_type, self.xorurl_base, false)
+    }
+
+    pub async fn files_store_private_blob(
+        &mut self,
+        data: &[u8],
+        media_type: Option<&str>,
+        dry_run: bool,
+    ) -> Result<XorUrl> {
+        let content_type = media_type.map_or_else(
+            || Ok(SafeContentType::Raw),
+            |media_type_str| {
+                if XorUrlEncoder::is_media_type_supported(media_type_str) {
+                    Ok(SafeContentType::MediaType(media_type_str.to_string()))
+                } else {
+                    Err(Error::InvalidMediaType(format!(
+                        "Media-type '{}' not supported. You can pass 'None' as the 'media_type' for this content to be treated as raw",
+                        media_type_str
+                    )))
+                }
+            },
+        )?;
+
+        let xorname = self
+            .safe_client
+            .store_blob(&data, dry_run, /*is_private =*/ true)
+            .await?;
+
+        XorUrlEncoder::encode_blob(xorname, content_type, self.xorurl_base, true)
     }
 
     /// # Get a Public Blob
@@ -611,7 +641,11 @@ impl Safe {
         range: Range,
     ) -> Result<Vec<u8>> {
         self.safe_client
-            .get_public_blob(xorurl_encoder.xorname(), range)
+            .get_blob(
+                xorurl_encoder.xorname(),
+                range,
+                /* is_private = */ false,
+            )
             .await
     }
 

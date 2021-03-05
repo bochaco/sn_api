@@ -196,24 +196,45 @@ impl SafeAppClient {
     }
 
     // // === Blob operations ===
-    pub async fn store_public_blob(&self, data: &[u8], _dry_run: bool) -> Result<XorName> {
+    pub async fn store_blob(
+        &self,
+        data: &[u8],
+        _dry_run: bool,
+        is_private: bool,
+    ) -> Result<XorName> {
         // TODO: allow this operation to work without a connection when it's a dry run
         let client = self.get_safe_client()?;
 
-        let address = client
-            .store_public_blob(data)
-            .await
-            .map_err(|e| Error::NetDataError(format!("Failed to PUT Public Blob: {:?}", e)))?;
+        let address =
+            if is_private {
+                client.store_private_blob(data).await.map_err(|e| {
+                    Error::NetDataError(format!("Failed to PUT Private Blob: {:?}", e))
+                })?
+            } else {
+                client.store_public_blob(data).await.map_err(|e| {
+                    Error::NetDataError(format!("Failed to PUT Public Blob: {:?}", e))
+                })?
+            };
 
         let xorname = *address.name();
         Ok(xorname)
     }
 
-    pub async fn get_public_blob(&self, xorname: XorName, range: Range) -> Result<Vec<u8>> {
-        debug!("Fetching immutable data: {:?}", &xorname);
-
+    pub async fn get_blob(
+        &self,
+        xorname: XorName,
+        range: Range,
+        is_private: bool,
+    ) -> Result<Vec<u8>> {
         let client = self.get_safe_client()?;
-        let blob_address = BlobAddress::Public(xorname);
+        let (blob_address, s) = if is_private {
+            (BlobAddress::Private(xorname), "Private")
+        } else {
+            (BlobAddress::Public(xorname), "Public")
+        };
+
+        debug!("Fetching {} Blob: {:?}", s, &xorname);
+
         let data = if let Some((start, end)) = range {
             let len = if let Some(end_index) = end {
                 Some(end_index - start.unwrap_or(0))
@@ -224,11 +245,11 @@ impl SafeAppClient {
         } else {
             client.read_blob(blob_address, None, None).await
         }
-        .map_err(|e| Error::NetDataError(format!("Failed to GET Public Blob: {:?}", e)))?;
+        .map_err(|err| Error::NetDataError(format!("Failed to GET {} Blob: {:?}", s, err)))?;
 
         debug!(
-            "Public Blob data successfully retrieved from: {:?}",
-            &xorname
+            "{} Blob data successfully retrieved from: {:?}",
+            s, &xorname
         );
 
         Ok(data)

@@ -41,7 +41,7 @@ impl Safe {
             .store_map(None, WALLET_TYPE_TAG, None, None)
             .await?;
 
-        XorUrlEncoder::encode_mutable_data(
+        XorUrlEncoder::encode_map_data(
             xorname,
             WALLET_TYPE_TAG,
             SafeContentType::Wallet,
