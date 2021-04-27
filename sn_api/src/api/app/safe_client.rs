@@ -692,29 +692,16 @@ impl SafeAppClient {
 
     pub async fn write_to_register(
         &self,
-        data: &[u8],
-        name: XorName,
-        tag: u64,
-        private: bool,
+        address: Address,
+        data: Vec<u8>,
         parents: BTreeSet<EntryHash>,
     ) -> Result<EntryHash> {
-        debug!(
-            "Writting to {} Register data with tag type: {}, xorname: {}",
-            if private { "Private" } else { "Public" },
-            tag,
-            name
-        );
+        debug!("Writing to Register @ {:?}", address);
 
         let client = self.get_safe_client()?;
 
-        let register_address = if private {
-            Address::Private { name, tag }
-        } else {
-            Address::Public { name, tag }
-        };
-
         client
-            .write_to_register(register_address, data.to_vec(), parents)
+            .write_to_register(address, data, parents)
             .await
             .map_err(|e| Error::NetDataError(format!("Failed to write to Register: {:?}", e)))
     }

@@ -9,7 +9,7 @@
 
 use super::{
     register::EntryHash,
-    safeurl::{SafeContentType, SafeDataType, SafeUrl, XorUrl},
+    safeurl::{SafeContentType, SafeUrl, XorUrl},
 };
 use crate::{Error, Result, Safe};
 use log::debug;
@@ -110,16 +110,10 @@ impl Safe {
         })?;
 
         let safeurl = Safe::parse_url(url)?;
-        let is_private = safeurl.data_type() == SafeDataType::PrivateRegister;
+        let address = safeurl.register_address()?;
 
         self.safe_client
-            .write_to_register(
-                &serialised_entry,
-                safeurl.xorname(),
-                safeurl.type_tag(),
-                is_private,
-                replace,
-            )
+            .write_to_register(address, serialised_entry, replace)
             .await
     }
 
@@ -131,17 +125,10 @@ impl Safe {
     ) -> Result<EntryHash> {
         debug!("Removing from Multimap at {}: {:?}", url, to_remove);
         let safeurl = Safe::parse_url(url)?;
-        let is_private = safeurl.data_type() == SafeDataType::PrivateRegister;
-
+        let address = safeurl.register_address()?;
         let hash = self
             .safe_client
-            .write_to_register(
-                MULTIMAP_REMOVED_MARK,
-                safeurl.xorname(),
-                safeurl.type_tag(),
-                is_private,
-                to_remove,
-            )
+            .write_to_register(address, MULTIMAP_REMOVED_MARK.to_vec(), to_remove)
             .await?;
 
         Ok(hash)

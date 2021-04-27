@@ -105,7 +105,7 @@ impl Safe {
     }
 
     /// Write value to a Register on the network
-    pub async fn write_to_register(&self, url: &str, data: &[u8]) -> Result<EntryHash> {
+    pub async fn write_to_register(&self, url: &str, data: Vec<u8>) -> Result<EntryHash> {
         /*
         let safeurl = Safe::parse_url(url)?;
         if safeurl.content_hash().is_some() {
@@ -119,14 +119,11 @@ impl Safe {
         */
 
         let (safeurl, _) = self.parse_and_resolve_url(url).await?;
-
-        let xorname = safeurl.xorname();
-        let type_tag = safeurl.type_tag();
-        let is_private = safeurl.data_type() == SafeDataType::PrivateRegister;
+        let address = safeurl.register_address()?;
 
         // write the data to the Register
         self.safe_client
-            .write_to_register(data, xorname, type_tag, is_private, BTreeSet::new())
+            .write_to_register(address, data, BTreeSet::new())
             .await
     }
 }
@@ -150,8 +147,12 @@ mod tests {
         assert!(received_data_priv.is_empty());
 
         let initial_data = b"initial data";
-        let hash = safe.write_to_register(&xorurl, initial_data).await?;
-        let hash_priv = safe.write_to_register(&xorurl_priv, initial_data).await?;
+        let hash = safe
+            .write_to_register(&xorurl, initial_data.to_vec())
+            .await?;
+        let hash_priv = safe
+            .write_to_register(&xorurl_priv, initial_data.to_vec())
+            .await?;
 
         let received_entry = retry_loop!(safe.register_read_entry(&xorurl, hash));
         let received_entry_priv = retry_loop!(safe.register_read_entry(&xorurl_priv, hash));
