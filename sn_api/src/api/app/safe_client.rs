@@ -697,7 +697,6 @@ impl SafeAppClient {
         parents: BTreeSet<EntryHash>,
     ) -> Result<EntryHash> {
         debug!("Writing to Register @ {:?}", address);
-
         let client = self.get_safe_client()?;
 
         client

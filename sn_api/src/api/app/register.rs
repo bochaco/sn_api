@@ -105,7 +105,12 @@ impl Safe {
     }
 
     /// Write value to a Register on the network
-    pub async fn write_to_register(&self, url: &str, data: Vec<u8>) -> Result<EntryHash> {
+    pub async fn write_to_register(
+        &self,
+        url: &str,
+        data: Vec<u8>,
+        parents: BTreeSet<EntryHash>,
+    ) -> Result<EntryHash> {
         /*
         let safeurl = Safe::parse_url(url)?;
         if safeurl.content_hash().is_some() {
@@ -123,7 +128,7 @@ impl Safe {
 
         // write the data to the Register
         self.safe_client
-            .write_to_register(address, data, BTreeSet::new())
+            .write_to_register(address, data, parents)
             .await
     }
 }
