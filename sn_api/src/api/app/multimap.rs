@@ -49,11 +49,7 @@ impl Safe {
     }
 
     /// Return the value of a Multimap on the network corresponding to the key provided
-    pub async fn multimap_get_by_key(
-        &self,
-        url: &str,
-        key: &[u8],
-    ) -> Result<Option<(EntryHash, MultimapValue)>> {
+    pub async fn multimap_get_by_key(&self, url: &str, key: &[u8]) -> Result<MultimapKeyValues> {
         debug!("Getting value by key from Multimap at: {}", url);
         let (safeurl, _) = self.parse_and_resolve_url(url).await?;
 
@@ -69,12 +65,7 @@ impl Safe {
         debug!("Getting value by hash from Multimap at: {}", url);
         let (safeurl, _) = self.parse_and_resolve_url(url).await?;
 
-        let entries = self
-            .fetch_multimap_value(&safeurl, Some(hash), None)
-            .await?;
-
-        // Since we passed down a hash we know only one single entry should have been found
-        Ok(entries.into_iter().next().map(|(_, key_val)| key_val))
+        self.fetch_multimap_value_by_hash(&safeurl, hash).await
     }
 
     // Return the value (by a provided key) of a Multimap on
@@ -83,15 +74,12 @@ impl Safe {
         &self,
         safeurl: &SafeUrl,
         key: &[u8],
-    ) -> Result<Option<(EntryHash, MultimapValue)>> {
-        let entries = self.fetch_multimap_value(safeurl, None, Some(key)).await?;
-
-        // Since we passed down a key to filter with,
-        // we know only one single entry should have been found
+    ) -> Result<MultimapKeyValues> {
+        let entries = self.fetch_multimap_values(safeurl).await?;
         Ok(entries
             .into_iter()
-            .next()
-            .map(|(hash, (_, val))| (hash, val)))
+            .filter(|(_, (entry_key, _))| entry_key == key)
+            .collect())
     }
 
     /// Insert a key-value pair into a Multimap on the network
@@ -137,74 +125,73 @@ impl Safe {
     // Crate's helper to return the value of a Multimap on
     // the network without resolving the SafeUrl,
     // optionally filtering by hash and/or key.
-    pub(crate) async fn fetch_multimap_value(
+    pub(crate) async fn fetch_multimap_values(
         &self,
         safeurl: &SafeUrl,
-        hash: Option<EntryHash>,
-        key_to_find: Option<&[u8]>,
     ) -> Result<MultimapKeyValues> {
-        let entries = match hash {
-            Some(h) => match self.fetch_register_entry(safeurl, h).await {
-                Ok(data) => {
-                    debug!("Multimap retrieved...");
-                    Ok(vec![(h, data)].into_iter().collect::<BTreeSet<_>>())
-                }
-                Err(Error::EmptyContent(_)) => Err(Error::EmptyContent(format!(
-                    "Multimap found at \"{}\" was empty",
-                    safeurl
-                ))),
-                Err(Error::ContentNotFound(_)) => Err(Error::ContentNotFound(
-                    "No Multimap found at this address".to_string(),
-                )),
-                Err(other) => Err(other),
-            }?,
-            None => match self.fetch_register_entries(safeurl).await {
-                Ok(data) => {
-                    debug!("Multimap retrieved...");
-                    Ok(data)
-                }
-                Err(Error::EmptyContent(_)) => Err(Error::EmptyContent(format!(
-                    "Multimap found at \"{}\" was empty",
-                    safeurl
-                ))),
-                Err(Error::ContentNotFound(_)) => Err(Error::ContentNotFound(
-                    "No Multimap found at this address".to_string(),
-                )),
-                other => other,
-            }?,
-        };
+        let entries = match self.fetch_register_entries(safeurl).await {
+            Ok(data) => {
+                debug!("Multimap retrieved...");
+                Ok(data)
+            }
+            Err(Error::EmptyContent(_)) => Err(Error::EmptyContent(format!(
+                "Multimap found at \"{}\" was empty",
+                safeurl
+            ))),
+            Err(Error::ContentNotFound(_)) => Err(Error::ContentNotFound(
+                "No Multimap found at this address".to_string(),
+            )),
+            other => other,
+        }?;
 
         // We parse each entry in the Register as a 'MultimapKeyValue'
         let mut multimap_key_vals = MultimapKeyValues::new();
         for (hash, entry) in entries.iter() {
-            if !entry.is_empty() {
-                // ...this entry is not a MULTIMAP_REMOVED_MARK,
-                // let's then try to parse it as a key-value
-                let (current_key, current_value): MultimapKeyValue = rmp_serde::from_slice(entry)
-                    .map_err(|err| {
-                    Error::ContentError(format!(
-                        "Couldn't parse the entry stored in the Multimap at {}: {:?}",
-                        safeurl, err
-                    ))
-                })?;
-
-                if let Some(key) = key_to_find {
-                    if *key == current_key {
-                        return Ok(vec![(*hash, (current_key, current_value))]
-                            .into_iter()
-                            .collect());
-                    }
-                }
-
-                multimap_key_vals.insert((*hash, (current_key, current_value)));
+            if entry == MULTIMAP_REMOVED_MARK {
+                // this is a tombstone entry created to delete some old entries
+                continue;
             }
+            let key_val = Self::decode_multimap_entry(&entry)?;
+            multimap_key_vals.insert((*hash, key_val));
         }
+        Ok(multimap_key_vals)
+    }
 
-        if key_to_find.is_some() && !multimap_key_vals.is_empty() {
-            Ok(MultimapKeyValues::new())
+    // Crate's helper to return the value of a Multimap on
+    // the network without resolving the SafeUrl,
+    // optionally filtering by hash and/or key.
+    pub(crate) async fn fetch_multimap_value_by_hash(
+        &self,
+        safeurl: &SafeUrl,
+        hash: EntryHash,
+    ) -> Result<Option<MultimapKeyValue>> {
+        let entry = match self.fetch_register_entry(safeurl, hash).await {
+            Ok(data) => {
+                debug!("Multimap retrieved...");
+                Ok(data)
+            }
+            Err(Error::EmptyContent(_)) => Err(Error::EmptyContent(format!(
+                "Multimap found at \"{}\" was empty",
+                safeurl
+            ))),
+            Err(Error::ContentNotFound(_)) => Err(Error::ContentNotFound(
+                "No Multimap found at this address".to_string(),
+            )),
+            Err(other) => Err(other),
+        }?;
+
+        // We parse each entry in the Register as a 'MultimapKeyValue'
+        if entry == MULTIMAP_REMOVED_MARK {
+            Ok(None)
         } else {
-            Ok(multimap_key_vals)
+            let key_val = Self::decode_multimap_entry(&entry)?;
+            Ok(Some(key_val))
         }
+    }
+
+    fn decode_multimap_entry(entry: &[u8]) -> Result<MultimapKeyValue> {
+        rmp_serde::from_slice(&entry)
+            .map_err(|err| Error::ContentError(format!("Couldn't parse Multimap entry: {:?}", err)))
     }
 }
 

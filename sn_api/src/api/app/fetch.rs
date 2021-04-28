@@ -416,7 +416,7 @@ impl Safe {
             SafeContentType::Multimap => {
                 let data = if retrieve_data {
                     // TODO: pass the hash of the URL to grab a single element
-                    self.fetch_multimap_value(&the_xor, None, None).await?
+                    self.fetch_multimap_values(&the_xor).await?
                 } else {
                     MultimapKeyValues::new()
                 };
