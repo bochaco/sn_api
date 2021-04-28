@@ -44,46 +44,28 @@ impl Safe {
         debug!("Getting Public Register data from: {:?}", url);
         let (safeurl, _) = self.parse_and_resolve_url(url).await?;
 
-        self.fetch_register_value(&safeurl, None).await
+        self.fetch_register_entries(&safeurl).await
     }
 
     /// Read value from a Register on the network by its hash
-    pub async fn register_read_entry(
-        &self,
-        url: &str,
-        hash: EntryHash,
-    ) -> Result<Option<(EntryHash, Entry)>> {
+    pub async fn register_read_entry(&self, url: &str, hash: EntryHash) -> Result<Entry> {
         debug!("Getting Public Register data from: {:?}", url);
         let (safeurl, _) = self.parse_and_resolve_url(url).await?;
 
-        let entries = self.fetch_register_value(&safeurl, Some(hash)).await?;
-
-        // Since we passed down a hash we know only one single entry should have been found
-        Ok(entries.into_iter().next())
+        self.fetch_register_entry(&safeurl, hash).await
     }
 
     /// Fetch a Register from a SafeUrl without performing any type of URL resolution
-    pub(crate) async fn fetch_register_value(
+    pub(crate) async fn fetch_register_entries(
         &self,
         safeurl: &SafeUrl,
-        hash: Option<EntryHash>,
     ) -> Result<BTreeSet<(EntryHash, Entry)>> {
         // TODO: allow to specify the hash with the SafeUrl as well: safeurl.content_hash(),
         // e.g. safe://mysafeurl#ce56a3504c8f27bfeb13bdf9051c2e91409230ea
 
         let address = safeurl.register_address()?;
 
-        let data = if let Some(hash) = hash {
-            // We fetch a specific entry with provided hash
-            let data = self.safe_client.get_register_entry(address, hash).await?;
-
-            Ok(vec![(hash, data)].into_iter().collect())
-        } else {
-            // ...then get last entry from the Register
-            self.safe_client.read_register(address).await
-        };
-
-        match data {
+        match self.safe_client.read_register(address).await {
             Ok(data) => {
                 debug!("Register retrieved...");
                 Ok(data)
@@ -97,6 +79,20 @@ impl Safe {
             )),
             other => other,
         }
+    }
+
+    /// Fetch a Register from a SafeUrl without performing any type of URL resolution
+    pub(crate) async fn fetch_register_entry(
+        &self,
+        safeurl: &SafeUrl,
+        hash: EntryHash,
+    ) -> Result<Entry> {
+        // TODO: allow to specify the hash with the SafeUrl as well: safeurl.content_hash(),
+        // e.g. safe://mysafeurl#ce56a3504c8f27bfeb13bdf9051c2e91409230ea
+        let address = safeurl.register_address()?;
+
+        // We fetch a specific entry with provided hash
+        self.safe_client.get_register_entry(address, hash).await
     }
 
     /// Write value to a Register on the network

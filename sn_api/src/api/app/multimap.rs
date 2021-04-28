@@ -143,20 +143,36 @@ impl Safe {
         hash: Option<EntryHash>,
         key_to_find: Option<&[u8]>,
     ) -> Result<MultimapKeyValues> {
-        let entries = match self.fetch_register_value(safeurl, hash).await {
-            Ok(data) => {
-                debug!("Multimap retrieved...");
-                Ok(data)
-            }
-            Err(Error::EmptyContent(_)) => Err(Error::EmptyContent(format!(
-                "Multimap found at \"{}\" was empty",
-                safeurl
-            ))),
-            Err(Error::ContentNotFound(_)) => Err(Error::ContentNotFound(
-                "No Multimap found at this address".to_string(),
-            )),
-            other => other,
-        }?;
+        let entries = match hash {
+            Some(h) => match self.fetch_register_entry(safeurl, h).await {
+                Ok(data) => {
+                    debug!("Multimap retrieved...");
+                    Ok(vec![(h, data)].into_iter().collect::<BTreeSet<_>>())
+                }
+                Err(Error::EmptyContent(_)) => Err(Error::EmptyContent(format!(
+                    "Multimap found at \"{}\" was empty",
+                    safeurl
+                ))),
+                Err(Error::ContentNotFound(_)) => Err(Error::ContentNotFound(
+                    "No Multimap found at this address".to_string(),
+                )),
+                Err(other) => Err(other),
+            }?,
+            None => match self.fetch_register_entries(safeurl).await {
+                Ok(data) => {
+                    debug!("Multimap retrieved...");
+                    Ok(data)
+                }
+                Err(Error::EmptyContent(_)) => Err(Error::EmptyContent(format!(
+                    "Multimap found at \"{}\" was empty",
+                    safeurl
+                ))),
+                Err(Error::ContentNotFound(_)) => Err(Error::ContentNotFound(
+                    "No Multimap found at this address".to_string(),
+                )),
+                other => other,
+            }?,
+        };
 
         // We parse each entry in the Register as a 'MultimapKeyValue'
         let mut multimap_key_vals = MultimapKeyValues::new();
