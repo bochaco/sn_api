@@ -144,20 +144,17 @@ mod tests {
 
         let initial_data = b"initial data";
         let hash = safe
-            .write_to_register(&xorurl, initial_data.to_vec())
+            .write_to_register(&xorurl, initial_data.to_vec(), Default::default())
             .await?;
         let hash_priv = safe
-            .write_to_register(&xorurl_priv, initial_data.to_vec())
+            .write_to_register(&xorurl_priv, initial_data.to_vec(), Default::default())
             .await?;
 
         let received_entry = retry_loop!(safe.register_read_entry(&xorurl, hash));
-        let received_entry_priv = retry_loop!(safe.register_read_entry(&xorurl_priv, hash));
+        let received_entry_priv = retry_loop!(safe.register_read_entry(&xorurl_priv, hash_priv));
 
-        assert_eq!(received_entry, Some((hash, initial_data.to_vec())));
-        assert_eq!(
-            received_entry_priv,
-            Some((hash_priv, initial_data.to_vec()))
-        );
+        assert_eq!(received_entry, initial_data.to_vec());
+        assert_eq!(received_entry_priv, initial_data.to_vec());
 
         Ok(())
     }
