@@ -9,7 +9,7 @@
 
 pub use sn_data_types::register::{Entry, EntryHash};
 
-use super::safeurl::{SafeContentType, SafeDataType, SafeUrl, XorUrl};
+use super::safeurl::{SafeContentType, SafeUrl, XorUrl};
 use crate::{Error, Result, Safe};
 use log::debug;
 use std::collections::BTreeSet;
@@ -68,24 +68,19 @@ impl Safe {
         safeurl: &SafeUrl,
         hash: Option<EntryHash>,
     ) -> Result<BTreeSet<(EntryHash, Entry)>> {
-        let is_private = safeurl.data_type() == SafeDataType::PrivateRegister;
-
         // TODO: allow to specify the hash with the SafeUrl as well: safeurl.content_hash(),
         // e.g. safe://mysafeurl#ce56a3504c8f27bfeb13bdf9051c2e91409230ea
 
+        let address = safeurl.register_address()?;
+
         let data = if let Some(hash) = hash {
             // We fetch a specific entry with provided hash
-            let data = self
-                .safe_client
-                .get_register_entry(safeurl.xorname(), safeurl.type_tag(), hash, is_private)
-                .await?;
+            let data = self.safe_client.get_register_entry(address, hash).await?;
 
             Ok(vec![(hash, data)].into_iter().collect())
         } else {
             // ...then get last entry from the Register
-            self.safe_client
-                .read_register(safeurl.xorname(), safeurl.type_tag(), is_private)
-                .await
+            self.safe_client.read_register(address).await
         };
 
         match data {
